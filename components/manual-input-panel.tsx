@@ -157,17 +157,80 @@ export default function ManualInputPanel({ onEdgesChange, isRunning }: ManualInp
 
   const addSampleData = () => {
     const sampleEdges = [
-      { source: "A", target: "B", weight: 4 },
-      { source: "B", target: "C", weight: 1 },
-      { source: "C", target: "D", weight: 8 },
-      { source: "D", target: "E", weight: 2 },
-      { source: "E", target: "F", weight: 3 },
-      { source: "F", target: "A", weight: 6 },
-      { source: "A", target: "D", weight: 5 },
+      // Các cạnh sẽ được xét theo thứ tự:
+      { source: "B", target: "C", weight: 1 },  // Bước 1: Chấp nhận (MST)
+      { source: "D", target: "E", weight: 2 },  // Bước 2: Chấp nhận (MST)
+      { source: "E", target: "F", weight: 3 },  // Bước 3: Chấp nhận (MST)
+      { source: "A", target: "B", weight: 4 },  // Bước 4: Chấp nhận (MST)
+      { source: "A", target: "D", weight: 5 },  // Bước 5: Chấp nhận (MST) - Đủ 5 cạnh!
+      { source: "B", target: "E", weight: 6 },  // Bước 6: LOẠI - B và E đã kết nối qua B-C-...-E
+      { source: "C", target: "F", weight: 7 },  // Bước 7: LOẠI - C và F đã kết nối
+      { source: "A", target: "C", weight: 8 },  // Bước 8: LOẠI - A và C đã kết nối qua A-B-C  
+      { source: "D", target: "F", weight: 9 },  // Bước 9: LOẠI - D và F đã kết nối
     ]
     setEdges(sampleEdges)
     onEdgesChange(sampleEdges)
-    setErrorMsg("")
+    setErrorMsg("✅ Demo data loaded! 5 edges will be ACCEPTED, 4 edges will be REJECTED")
+    setSmartInput("")
+  }
+
+  const loadChuDe7Data = () => {
+    // Dữ liệu từ file "chủ đề 7.xlsx" - 100 cạnh, 49 đỉnh
+    const chuDe7Edges = [
+      { source: "35", target: "40", weight: 97 }, { source: "31", target: "22", weight: 89 },
+      { source: "5", target: "6", weight: 17 }, { source: "25", target: "3", weight: 89 },
+      { source: "33", target: "40", weight: 50 }, { source: "39", target: "11", weight: 86 },
+      { source: "2", target: "25", weight: 85 }, { source: "20", target: "40", weight: 34 },
+      { source: "11", target: "24", weight: 99 }, { source: "35", target: "39", weight: 75 },
+      { source: "46", target: "38", weight: 36 }, { source: "27", target: "42", weight: 45 },
+      { source: "40", target: "5", weight: 72 }, { source: "5", target: "41", weight: 37 },
+      { source: "22", target: "13", weight: 93 }, { source: "20", target: "11", weight: 28 },
+      { source: "24", target: "34", weight: 29 }, { source: "38", target: "16", weight: 71 },
+      { source: "2", target: "26", weight: 12 }, { source: "28", target: "8", weight: 15 },
+      { source: "42", target: "45", weight: 30 }, { source: "49", target: "38", weight: 84 },
+      { source: "23", target: "49", weight: 97 }, { source: "23", target: "35", weight: 52 },
+      { source: "46", target: "7", weight: 68 }, { source: "33", target: "12", weight: 13 },
+      { source: "31", target: "21", weight: 87 }, { source: "30", target: "13", weight: 41 },
+      { source: "6", target: "14", weight: 90 }, { source: "33", target: "4", weight: 82 },
+      { source: "21", target: "47", weight: 86 }, { source: "19", target: "12", weight: 93 },
+      { source: "39", target: "28", weight: 90 }, { source: "37", target: "44", weight: 16 },
+      { source: "49", target: "11", weight: 96 }, { source: "7", target: "48", weight: 21 },
+      { source: "0", target: "24", weight: 52 }, { source: "14", target: "30", weight: 17 },
+      { source: "41", target: "48", weight: 45 }, { source: "37", target: "10", weight: 96 },
+      { source: "44", target: "43", weight: 31 }, { source: "48", target: "32", weight: 66 },
+      { source: "35", target: "13", weight: 81 }, { source: "30", target: "12", weight: 38 },
+      { source: "0", target: "16", weight: 78 }, { source: "12", target: "17", weight: 61 },
+      { source: "38", target: "33", weight: 29 }, { source: "49", target: "32", weight: 50 },
+      { source: "2", target: "45", weight: 80 }, { source: "16", target: "34", weight: 76 },
+      { source: "25", target: "0", weight: 66 }, { source: "23", target: "12", weight: 19 },
+      { source: "13", target: "45", weight: 87 }, { source: "23", target: "29", weight: 47 },
+      { source: "31", target: "44", weight: 33 }, { source: "30", target: "48", weight: 10 },
+      { source: "6", target: "43", weight: 43 }, { source: "7", target: "3", weight: 31 },
+      { source: "34", target: "19", weight: 96 }, { source: "14", target: "34", weight: 78 },
+      { source: "45", target: "8", weight: 20 }, { source: "9", target: "34", weight: 14 },
+      { source: "3", target: "46", weight: 72 }, { source: "45", target: "16", weight: 61 },
+      { source: "20", target: "34", weight: 75 }, { source: "12", target: "15", weight: 82 },
+      { source: "27", target: "1", weight: 34 }, { source: "20", target: "43", weight: 13 },
+      { source: "11", target: "41", weight: 68 }, { source: "17", target: "46", weight: 89 },
+      { source: "5", target: "17", weight: 69 }, { source: "24", target: "36", weight: 43 },
+      { source: "46", target: "47", weight: 46 }, { source: "42", target: "3", weight: 20 },
+      { source: "37", target: "44", weight: 47 }, { source: "12", target: "2", weight: 90 },
+      { source: "36", target: "25", weight: 34 }, { source: "33", target: "38", weight: 56 },
+      { source: "27", target: "32", weight: 78 }, { source: "31", target: "49", weight: 72 },
+      { source: "25", target: "39", weight: 96 }, { source: "17", target: "12", weight: 22 },
+      { source: "19", target: "17", weight: 85 }, { source: "37", target: "19", weight: 29 },
+      { source: "28", target: "8", weight: 16 }, { source: "4", target: "34", weight: 65 },
+      { source: "22", target: "15", weight: 32 }, { source: "25", target: "44", weight: 67 },
+      { source: "8", target: "16", weight: 70 }, { source: "23", target: "41", weight: 57 },
+      { source: "0", target: "43", weight: 65 }, { source: "46", target: "41", weight: 28 },
+      { source: "6", target: "40", weight: 89 }, { source: "5", target: "27", weight: 13 },
+      { source: "7", target: "12", weight: 42 }, { source: "7", target: "15", weight: 68 },
+      { source: "36", target: "6", weight: 89 }, { source: "25", target: "19", weight: 40 },
+      { source: "31", target: "30", weight: 54 }, { source: "44", target: "22", weight: 62 },
+    ]
+    setEdges(chuDe7Edges)
+    onEdgesChange(chuDe7Edges)
+    setErrorMsg("📊 Đã tải Chủ Đề 7: 100 cạnh, 49 đỉnh từ file Excel")
     setSmartInput("")
   }
 
@@ -243,7 +306,7 @@ export default function ManualInputPanel({ onEdgesChange, isRunning }: ManualInp
               onClick={addEdgeFromSmartInput}
               disabled={isRunning}
               size="sm"
-              className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-200"
+              className="bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-semibold shadow-lg hover:shadow-blue-500/50 transition-all duration-200"
             >
               <Plus className="w-4 h-4 mr-1.5" />
               Thêm
@@ -253,7 +316,7 @@ export default function ManualInputPanel({ onEdgesChange, isRunning }: ManualInp
               onClick={pasteBulkData}
               disabled={isRunning}
               size="sm"
-              className="bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-semibold shadow-lg hover:shadow-purple-500/50 transition-all duration-200"
+              className="bg-linear-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-semibold shadow-lg hover:shadow-purple-500/50 transition-all duration-200"
             >
               <Zap className="w-4 h-4 mr-1.5" />
               Paste
@@ -263,9 +326,18 @@ export default function ManualInputPanel({ onEdgesChange, isRunning }: ManualInp
               onClick={addSampleData}
               disabled={isRunning}
               size="sm"
-              className="bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-semibold shadow-lg hover:shadow-emerald-500/50 transition-all duration-200"
+              className="bg-linear-to-r from-emerald-600 to-emerald-700 hover:from-emerald-500 hover:to-emerald-600 text-white font-semibold shadow-lg hover:shadow-emerald-500/50 transition-all duration-200"
             >
-              ✨ Mẫu
+              ✨ Demo
+            </Button>
+
+            <Button
+              onClick={loadChuDe7Data}
+              disabled={isRunning}
+              size="sm"
+              className="bg-linear-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-semibold shadow-lg hover:shadow-purple-500/50 transition-all duration-200"
+            >
+              📊 Chủ Đề 7
             </Button>
           </div>
 
@@ -336,7 +408,7 @@ export default function ManualInputPanel({ onEdgesChange, isRunning }: ManualInp
       {edges.length === 0 && (
         <Card className="p-4 bg-slate-900/30 border border-slate-700/30">
           <div className="space-y-2 text-xs text-slate-400">
-            <p className="flex items-center gap-2"><span className="text-base">💡</span> <strong>Format hỗ trợ:</strong> A B 5 | A,B,5 | A-B-5 | A|B|5</p>
+            <p className="flex items-center gap-2"><span className="text-base">💡</span> <strong>Format hỗ trợ:</strong>               A-B-5 | A-B-5 | A|B|| (hoặc nhấn Demo bên dưới)</p>
             <p className="flex items-center gap-2"><span className="text-base">�</span> <strong>Paste:</strong> Copy nhiều dòng, dán vào, click Paste</p>
             <p className="flex items-center gap-2"><span className="text-base">⌨️</span> <strong>Enter:</strong> Thêm 1 cạnh hoặc paste</p>
           </div>

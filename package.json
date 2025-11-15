@@ -1,12 +1,17 @@
 {
-  "name": "my-v0-project",
-  "version": "0.1.0",
+  "name": "kruskal-visualization",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "build": "next build",
-    "dev": "next dev",
+    "dev": "concurrently -n \"BACKEND,FRONTEND\" -c \"bgBlue.bold,bgMagenta.bold\" \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "cd backend && ./start.sh",
+    "dev:frontend": "next dev",
     "lint": "eslint .",
-    "start": "next start"
+    "start": "next start",
+    "backend": "cd backend && source venv/bin/activate && python main.py",
+    "backend:setup": "cd backend && python3 -m venv venv && source venv/bin/activate && pip install -r requirements.txt",
+    "backend:test": "cd backend && source venv/bin/activate && python kruskal.py"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -67,6 +72,7 @@
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^9.2.1",
     "postcss": "^8.5",
     "tailwindcss": "^4.1.9",
     "tw-animate-css": "1.3.3",

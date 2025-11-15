@@ -104,42 +104,46 @@ export default function StepExplanationPanel({
 
           {/* Statistics */}
           <div className="grid grid-cols-3 gap-3">
-            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 text-center">
-              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Chi phí MST</p>
-              <p className="text-2xl font-bold text-green-400">{totalCost}</p>
+            <div className="bg-slate-900/50 rounded p-3 border border-slate-700">
+              <p className="text-xs text-slate-400 mb-1">Chi phí MST</p>
+              <p className="text-lg font-bold text-green-400">{totalCost}</p>
             </div>
-            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 text-center">
-              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Cạnh chọn</p>
-              <p className="text-2xl font-bold text-blue-400">{edgesSelected}</p>
+            <div className="bg-slate-900/50 rounded p-3 border border-slate-700">
+              <p className="text-xs text-slate-400 mb-1">Cạnh đã chọn</p>
+              <p className="text-lg font-bold text-blue-400">{edgesSelected}</p>
             </div>
-            <div className="bg-slate-900/50 rounded-lg p-3 border border-slate-700 text-center">
-              <p className="text-xs text-slate-400 uppercase tracking-wide mb-1">Thành phần</p>
-              <p className="text-2xl font-bold text-cyan-400">{connectedComponents}</p>
+            <div className="bg-slate-900/50 rounded p-3 border border-slate-700">
+              <p className="text-xs text-slate-400 mb-1">Thành phần</p>
+              <p className="text-lg font-bold text-purple-400">{connectedComponents}</p>
             </div>
           </div>
-
-          {/* Algorithm Explanation */}
+          
+          {/* Explanation - Logic Accept/Reject */}
           <div className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
-            <p className="text-xs text-slate-400 uppercase tracking-wide mb-2">Giải thích Chi Tiết | Detailed Explanation</p>
-            <p className="text-sm text-slate-300 leading-relaxed mb-3">
-              {currentStatus === "examining" && currentEdge &&
-                `🔍 Đang kiểm tra cạnh ${currentEdge.source} → ${currentEdge.target} (trọng số: ${currentEdge.weight}). Hệ thống sử dụng Union-Find để kiểm tra xem hai đỉnh đã được kết nối chưa.`}
-              {currentStatus === "selected" && currentEdge &&
-                `✅ Cạnh ${currentEdge.source} → ${currentEdge.target} được thêm vào MST! Chi phí tăng thêm ${currentEdge.weight}. Hai thành phần liên thông được ghép lại.`}
-              {currentStatus === "rejected" && currentEdge &&
-                `❌ Cạnh ${currentEdge.source} → ${currentEdge.target} bị loại vì nó tạo chu trình. Hai đỉnh đã được kết nối qua các cạnh khác.`}
-              {!currentStatus && "Nhấn 'Chạy Kruskal' để bắt đầu mô phỏng. Thuật toán sẽ xét các cạnh theo thứ tự trọng số tăng dần."}
-            </p>
-            
-            {/* Algorithm Notes */}
-            <div className="bg-slate-800/50 rounded p-3 border border-slate-600 text-xs text-slate-300">
-              <p className="font-semibold mb-2 text-slate-200">💡 Thuật Toán Kruskal:</p>
-              <ul className="space-y-1 list-disc list-inside">
-                <li>Sắp xếp cạnh theo trọng số tăng dần</li>
-                <li>Duyệt từng cạnh, thêm vào MST nếu không tạo chu trình</li>
-                <li>Dùng Union-Find kiểm tra chu trình</li>
-                <li>Kết thúc khi có n-1 cạnh (n = số đỉnh)</li>
-              </ul>
+            <p className="text-xs text-slate-400 uppercase tracking-wide mb-3 font-semibold">📚 Cơ Sở Quyết Định</p>
+            <div className="space-y-3 text-sm">
+              <div className="flex gap-2">
+                <span className="text-green-400 font-bold shrink-0">✅</span>
+                <div>
+                  <p className="text-green-300 font-semibold mb-1">Chấp nhận cạnh khi:</p>
+                  <p className="text-slate-300">Hai đỉnh thuộc <span className="text-yellow-400 font-semibold">2 thành phần khác nhau</span> (find(u) ≠ find(v))</p>
+                  <p className="text-slate-400 text-xs mt-1">→ Không tạo chu trình, giúp kết nối 2 cây riêng biệt</p>
+                </div>
+              </div>
+              <div className="h-px bg-slate-700"></div>
+              <div className="flex gap-2">
+                <span className="text-red-400 font-bold shrink-0">❌</span>
+                <div>
+                  <p className="text-red-300 font-semibold mb-1">Loại bỏ cạnh khi:</p>
+                  <p className="text-slate-300">Hai đỉnh cùng <span className="text-yellow-400 font-semibold">1 thành phần</span> (find(u) = find(v))</p>
+                  <p className="text-slate-400 text-xs mt-1">→ Đã có đường đi, thêm cạnh này sẽ tạo chu trình</p>
+                </div>
+              </div>
+              <div className="h-px bg-slate-700"></div>
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded p-2">
+                <p className="text-blue-300 text-xs font-semibold mb-1">💡 Thuật toán Union-Find:</p>
+                <p className="text-slate-300 text-xs">Sử dụng <span className="text-cyan-400">find()</span> để kiểm tra đỉnh đại diện, <span className="text-cyan-400">union()</span> để hợp nhất thành phần</p>
+              </div>
             </div>
           </div>
         </div>

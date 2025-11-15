@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch"
+import { KruskalWebSocket, type KruskalStep as APIKruskalStep } from "@/lib/api-client"
 
 interface Edge {
   source: string
@@ -11,12 +12,12 @@ interface Edge {
 
 interface EdgeState {
   edge: Edge
-  status: "normal" | "examining" | "selected" | "rejected"
+  status: "normal" | "selected" | "rejected"
 }
 
 interface KruskalStep {
   edgeIndex: number
-  status: "examining" | "selected" | "rejected"
+  status: "selected" | "rejected"
   totalCost: number
 }
 
@@ -28,12 +29,12 @@ interface GraphVisualizationProps {
     currentStep: number
     totalSteps: number
     currentEdge?: Edge
-    currentStatus?: "examining" | "selected" | "rejected"
+    currentStatus?: "selected" | "rejected"
     totalCost: number
     edgesSelected: number
     connectedComponents: number
   }) => void
-  onLogEntry?: (entry: { message: string; type: "examining" | "selected" | "rejected" | "info" }) => void
+  onLogEntry?: (entry: { message: string; type: "selected" | "rejected" | "info" }) => void
   onComplete?: (totalCost: number, edgesSelected: number) => void
 }
 
@@ -68,12 +69,13 @@ export default function GraphVisualization({
   const [isComplete, setIsComplete] = useState(false)
   const [visibleNodes, setVisibleNodes] = useState<Set<string>>(new Set())
   const [visibleEdges, setVisibleEdges] = useState<Set<string>>(new Set())
+  const [currentEdgeKey, setCurrentEdgeKey] = useState<string | null>(null)
+  const [rejectionReason, setRejectionReason] = useState<Map<string, string>>(new Map())
+  const [totalStepsCount, setTotalStepsCount] = useState(0)
 
-  const animationRef = useRef<NodeJS.Timeout | null>(null)
+  const wsRef = useRef<KruskalWebSocket | null>(null)
   const stepsRef = useRef<KruskalStep[]>([])
   const stepIndexRef = useRef(0)
-  const stepsGeneratedRef = useRef(false)
-  const edgesSelectedRef = useRef(0)
   const sortedEdgesRef = useRef<Edge[]>([])
   const edgesRef = useRef<Edge[]>([])
 
@@ -82,8 +84,11 @@ export default function GraphVisualization({
     edges: Edge[],
     width: number,
     height: number,
-    iterations = 150,
-  ) => {
+    iterations: number = 100
+  ): Map<string, { x: number; y: number }> => {
+    const nodeCount = nodes.size
+    // Điều chỉnh iterations dựa trên số nodes
+    const actualIterations = Math.min(iterations, Math.max(30, 200 - nodeCount))
     const nodeArray = Array.from(nodes)
     const positions = new Map<string, { x: number; y: number; vx: number; vy: number }>()
 
@@ -108,7 +113,7 @@ export default function GraphVisualization({
     const attraction = 0.04 // Weaker attraction to prevent pulling together
 
     // Simulate forces with multiple iterations
-    for (let iter = 0; iter < iterations; iter++) {
+    for (let iter = 0; iter < actualIterations; iter++) {
       // Reset forces
       nodeArray.forEach((node) => {
         const pos = positions.get(node)!
@@ -201,11 +206,9 @@ export default function GraphVisualization({
     setCurrentStep(0)
     setIsComplete(false)
     stepIndexRef.current = 0
-    stepsGeneratedRef.current = false
     stepsRef.current = []
     setVisibleNodes(new Set())
     setVisibleEdges(new Set())
-    edgesSelectedRef.current = 0
     sortedEdgesRef.current = [...edges].sort((a, b) => a.weight - b.weight)
 
     const nodes = new Set<string>()
@@ -224,91 +227,49 @@ export default function GraphVisualization({
 
   useEffect(() => {
     if (!isRunning) {
-      if (animationRef.current) clearTimeout(animationRef.current)
+      // Disconnect WebSocket khi dừng
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
+      }
       return
     }
 
-    // Generate Kruskal steps only once
-    if (!stepsGeneratedRef.current) {
-      const sortedEdges = sortedEdgesRef.current
-      const parent = new Map<string, string>()
-      const newSteps: KruskalStep[] = []
-      let totalCostAccum = 0
-
-      const nodes = new Set<string>()
-      edgesRef.current.forEach((e) => {
-        nodes.add(e.source)
-        nodes.add(e.target)
-      })
-      nodes.forEach((node) => parent.set(node, node))
-
-      function find(x: string): string {
-        if (parent.get(x) !== x) {
-          parent.set(x, find(parent.get(x)!))
-        }
-        return parent.get(x)!
-      }
-
-      function union(x: string, y: string): boolean {
-        const px = find(x)
-        const py = find(y)
-        if (px === py) return false
-        parent.set(px, py)
-        return true
-      }
-
-      sortedEdges.forEach((edge) => {
-        newSteps.push({ edgeIndex: sortedEdges.indexOf(edge), status: "examining", totalCost: totalCostAccum })
-
-        if (union(edge.source, edge.target)) {
-          totalCostAccum += edge.weight
-          newSteps.push({
-            edgeIndex: sortedEdges.indexOf(edge),
-            status: "selected",
-            totalCost: totalCostAccum,
-          })
-        } else {
-          newSteps.push({
-            edgeIndex: sortedEdges.indexOf(edge),
-            status: "rejected",
-            totalCost: totalCostAccum,
-          })
-        }
-      })
-
-      stepsRef.current = newSteps
-      stepsGeneratedRef.current = true
-      stepIndexRef.current = 0
+    // Đóng connection cũ nếu có (trước khi tạo mới)
+    if (wsRef.current) {
+      wsRef.current.close()
+      wsRef.current = null
     }
 
-    let lastFrameTime = Date.now()
-    let animationFrameId: number | null = null
-
-    const animate = () => {
-      const now = Date.now()
-      const elapsed = now - lastFrameTime
-      const baseDelay = 1000
-      const delay = baseDelay / speed
-
-      if (elapsed < delay) {
-        animationFrameId = requestAnimationFrame(animate)
-        return
-      }
-
-      lastFrameTime = now
-
-      if (stepIndexRef.current < stepsRef.current.length) {
-        const step = stepsRef.current[stepIndexRef.current]
-        const sortedEdges = sortedEdgesRef.current
-        const edge = sortedEdges[step.edgeIndex]
+    // Kết nối WebSocket và bắt đầu stream thuật toán từ Python backend
+    wsRef.current = new KruskalWebSocket()
+    
+    wsRef.current.connect(edges, speed, {
+      onStep: (step: APIKruskalStep) => {
+        // Process step from Python backend
+        const edge = step.edge
         const key = `${edge.source}-${edge.target}`
 
+        // Highlight edge hiện tại
+        setCurrentEdgeKey(key)
+        
+        // Lưu lý do reject nếu bị từ chối
+        if (step.status === 'rejected') {
+          setRejectionReason((prev) => {
+            const newReasons = new Map(prev)
+            newReasons.set(key, '⚠️ TẠO CHU TRÌNH')
+            return newReasons
+          })
+        }
+
+        // Update edge state
         setEdgeStates((prev) => {
           const newStates = new Map(prev)
           newStates.set(key, { edge, status: step.status })
           return newStates
         })
 
+        // Update visible nodes and edges
         setVisibleNodes((prev) => {
           const newVisible = new Set(prev)
           newVisible.add(edge.source)
@@ -322,134 +283,79 @@ export default function GraphVisualization({
           return newVisible
         })
 
-        setTotalCost(step.totalCost)
-        setCurrentStep(stepIndexRef.current)
+        // Update statistics
+        setTotalCost(step.total_cost)
+        setEdgesSelected(step.edges_selected)
+        setConnectedComponents(step.connected_components)
+        setCurrentStep(step.step_number)
 
+        // Update component colors based on component_map from Python
+        setComponentColors((prev) => {
+          const newColors = new Map(prev)
+          Object.entries(step.component_map).forEach(([node, componentId]) => {
+            newColors.set(node, COMPONENT_COLORS[componentId % COMPONENT_COLORS.length])
+          })
+          return newColors
+        })
+
+        // Log entry
         if (onLogEntry) {
-          let logMessage = ""
-          if (step.status === "examining") {
-            logMessage = `Xét cạnh ${edge.source}-${edge.target} (trọng số: ${edge.weight})`
-          } else if (step.status === "selected") {
-            logMessage = `Chấp nhận cạnh ${edge.source}-${edge.target} (trọng số: ${edge.weight}) - Kết nối thành phần`
-          } else {
-            logMessage = `Bị loại cạnh ${edge.source}-${edge.target} - Tạo chu trình`
-          }
-
-          onLogEntry({ message: logMessage, type: step.status })
-        }
-
-        if (step.status === "selected") {
-          edgesSelectedRef.current++
-          setEdgesSelected(edgesSelectedRef.current)
-
-          setComponentColors((prev) => {
-            const newColors = new Map(prev)
-            const nodes = new Set<string>()
-            edgesRef.current.forEach((e) => {
-              nodes.add(e.source)
-              nodes.add(e.target)
-            })
-
-            const tempParent = new Map<string, string>()
-            nodes.forEach((node) => tempParent.set(node, node))
-
-            function tempFind(x: string): string {
-              if (tempParent.get(x) !== x) {
-                tempParent.set(x, tempFind(tempParent.get(x)!))
-              }
-              return tempParent.get(x)!
-            }
-
-            for (let i = 0; i <= stepIndexRef.current; i++) {
-              if (stepsRef.current[i].status === "selected") {
-                const e = sortedEdges[stepsRef.current[i].edgeIndex]
-                const px = tempFind(e.source)
-                const py = tempFind(e.target)
-                if (px !== py) {
-                  tempParent.set(px, py)
-                }
-              }
-            }
-
-            const componentMap = new Map<string, string>()
-            nodes.forEach((node) => {
-              const root = tempFind(node)
-              if (!componentMap.has(root)) {
-                componentMap.set(root, COMPONENT_COLORS[componentMap.size % COMPONENT_COLORS.length])
-              }
-              newColors.set(node, componentMap.get(root)!)
-            })
-
-            return newColors
+          onLogEntry({
+            message: step.message,
+            type: step.status
           })
         }
 
-        const nodes = new Set<string>()
-        edgesRef.current.forEach((e) => {
-          nodes.add(e.source)
-          nodes.add(e.target)
-        })
-
-        const tempParent = new Map<string, string>()
-        nodes.forEach((node) => tempParent.set(node, node))
-
-        function tempFind(x: string): string {
-          if (tempParent.get(x) !== x) {
-            tempParent.set(x, tempFind(tempParent.get(x)!))
-          }
-          return tempParent.get(x)!
-        }
-
-        for (let i = 0; i <= stepIndexRef.current; i++) {
-          if (stepsRef.current[i].status === "selected") {
-            const e = sortedEdges[stepsRef.current[i].edgeIndex]
-            const px = tempFind(e.source)
-            const py = tempFind(e.target)
-            if (px !== py) {
-              tempParent.set(px, py)
-            }
-          }
-        }
-
-        const roots = new Set<string>()
-        nodes.forEach((node) => {
-          roots.add(tempFind(node))
-        })
-        setConnectedComponents(roots.size)
-
+        // Update step info
         if (onStepChange) {
           onStepChange({
-            currentStep: stepIndexRef.current,
-            totalSteps: stepsRef.current.length,
+            currentStep: step.step_number - 1, // 0-indexed cho UI
+            totalSteps: totalStepsCount || edges.length, // Tổng số edges sẽ xem xét
             currentEdge: edge,
             currentStatus: step.status,
-            totalCost: step.totalCost,
-            edgesSelected: edgesSelectedRef.current + (step.status === "selected" ? 1 : 0),
-            connectedComponents: roots.size,
+            totalCost: step.total_cost,
+            edgesSelected: step.edges_selected,
+            connectedComponents: step.connected_components,
           })
         }
+      },
 
-        stepIndexRef.current++
+      onComplete: (result) => {
+        setIsComplete(true)
+        setCurrentEdgeKey(null)
+        setTotalStepsCount(currentStep) // Lưu tổng steps thực tế
+        
+        if (onComplete) {
+          onComplete(result.total_cost, result.mst_edges.length)
+        }
 
-        if (stepIndexRef.current >= stepsRef.current.length) {
-          setIsComplete(true)
-          if (onComplete) {
-            onComplete(step.totalCost, edgesSelectedRef.current + (step.status === "selected" ? 1 : 0))
-          }
+        if (onLogEntry) {
+          onLogEntry({
+            message: `✨ Hoàn thành! MST có ${result.mst_edges.length} cạnh với tổng chi phí: ${result.total_cost}`,
+            type: "info"
+          })
+        }
+      },
+
+      onError: (error) => {
+        console.error('WebSocket error:', error)
+        if (onLogEntry) {
+          onLogEntry({
+            message: `❌ Lỗi: ${error}`,
+            type: "info"
+          })
         }
       }
+    })
 
-      animationFrameId = requestAnimationFrame(animate)
-    }
-
-    animationFrameId = requestAnimationFrame(animate)
-
+    // Cleanup on unmount
     return () => {
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId)
+      if (wsRef.current) {
+        wsRef.current.close()
+        wsRef.current = null
       }
     }
-  }, [isRunning, speed, onStepChange, onLogEntry, onComplete])
+  }, [isRunning]) // Chỉ chạy lại khi isRunning thay đổi
 
   // Canvas rendering effect
   useEffect(() => {
@@ -485,19 +391,26 @@ export default function GraphVisualization({
       if (!pos1 || !pos2) return
 
       let edgeColor = "#64748b"
-      let lineWidth = 2
+      let lineWidth = 3
       let opacity = 1
+      let isCurrentEdge = key === currentEdgeKey
 
-      if (state?.status === "examining") {
-        edgeColor = "#eab308"
-        lineWidth = 3
-      } else if (state?.status === "selected") {
+      if (state?.status === "selected") {
         edgeColor = "#22c55e"
-        lineWidth = 3
+        lineWidth = 5
       } else if (state?.status === "rejected") {
         edgeColor = "#ef4444"
-        lineWidth = 2
-        opacity = isComplete ? 0.2 : 0.6
+        lineWidth = 4
+        opacity = isComplete ? 0.6 : 0.9
+      } else if (isCurrentEdge) {
+        edgeColor = "#fbbf24"
+        lineWidth = 6
+      }
+
+      // Glow effect cho edge đang xét
+      if (isCurrentEdge && !isComplete) {
+        ctx.shadowColor = edgeColor
+        ctx.shadowBlur = 15
       }
 
       ctx.strokeStyle = edgeColor
@@ -508,22 +421,77 @@ export default function GraphVisualization({
       ctx.lineTo(pos2.x, pos2.y)
       ctx.stroke()
       ctx.globalAlpha = 1
+      ctx.shadowBlur = 0
 
       const midX = (pos1.x + pos2.x) / 2
       const midY = (pos1.y + pos2.y) / 2
 
-      ctx.fillStyle = "#e2e8f0"
-      ctx.font = "bold 12px sans-serif"
+      // Weight label với gradient background
+      ctx.font = "bold 16px sans-serif"
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
 
       const text = edge.weight.toString()
       const metrics = ctx.measureText(text)
-      ctx.fillStyle = "#1e293b"
-      ctx.fillRect(midX - metrics.width / 2 - 4, midY - 8, metrics.width + 8, 16)
+      const padding = 8
+      const bgWidth = metrics.width + padding * 2
+      const bgHeight = 24
+      
+      // Gradient background cho weight
+      const gradient = ctx.createLinearGradient(
+        midX - bgWidth/2, midY - bgHeight/2,
+        midX + bgWidth/2, midY + bgHeight/2
+      )
+      if (state?.status === "selected") {
+        gradient.addColorStop(0, "#059669")
+        gradient.addColorStop(1, "#10b981")
+      } else if (state?.status === "rejected") {
+        gradient.addColorStop(0, "#dc2626")
+        gradient.addColorStop(1, "#ef4444")
+      } else if (isCurrentEdge) {
+        gradient.addColorStop(0, "#d97706")
+        gradient.addColorStop(1, "#f59e0b")
+      } else {
+        gradient.addColorStop(0, "#1e293b")
+        gradient.addColorStop(1, "#334155")
+      }
+      
+      ctx.fillStyle = gradient
+      ctx.fillRect(midX - bgWidth/2, midY - bgHeight/2, bgWidth, bgHeight)
+      
+      // Border cho weight label
+      ctx.strokeStyle = "#ffffff"
+      ctx.lineWidth = 1.5
+      ctx.strokeRect(midX - bgWidth/2, midY - bgHeight/2, bgWidth, bgHeight)
 
-      ctx.fillStyle = "#e2e8f0"
+      ctx.fillStyle = "#ffffff"
       ctx.fillText(text, midX, midY)
+      
+      // Hiển thị lý do reject với style nổi bật
+      if (state?.status === "rejected" && rejectionReason.has(key)) {
+        ctx.font = "bold 14px sans-serif"
+        const reason = rejectionReason.get(key)!
+        const reasonMetrics = ctx.measureText(reason)
+        const reasonBgWidth = reasonMetrics.width + 12
+        const reasonBgHeight = 22
+        
+        // Shadow cho text rejection
+        ctx.shadowColor = "rgba(239, 68, 68, 0.8)"
+        ctx.shadowBlur = 10
+        
+        // Background đỏ nổi bật
+        ctx.fillStyle = "rgba(220, 38, 38, 0.95)"
+        ctx.fillRect(midX - reasonBgWidth/2, midY + 20, reasonBgWidth, reasonBgHeight)
+        
+        // Border trắng
+        ctx.strokeStyle = "#ffffff"
+        ctx.lineWidth = 2
+        ctx.strokeRect(midX - reasonBgWidth/2, midY + 20, reasonBgWidth, reasonBgHeight)
+        
+        ctx.shadowBlur = 0
+        ctx.fillStyle = "#ffffff"
+        ctx.fillText(reason, midX, midY + 31)
+      }
     })
 
     const nodeArray = Array.from(nodes)
@@ -534,13 +502,27 @@ export default function GraphVisualization({
       if (!pos) return
 
       const nodeColor = componentColors.get(node) || "#3b82f6"
-      const nodeWidth = 60
-      const nodeHeight = 50
+      // Node sizing động dựa trên số lượng nodes
+      const totalNodes = nodes.size
+      const baseSize = totalNodes > 50 ? 45 : totalNodes > 20 ? 55 : 70
+      const nodeWidth = baseSize
+      const nodeHeight = baseSize * 0.75
+      
+      // Highlight nodes của edge đang xét
+      const isPartOfCurrentEdge = currentEdgeKey && 
+        (currentEdgeKey.startsWith(node + '-') || currentEdgeKey.endsWith('-' + node) ||
+         currentEdgeKey.includes('-' + node + '-'))
 
       // Draw rounded rectangle (using arcs for compatibility)
       const x = pos.x - nodeWidth / 2
       const y = pos.y - nodeHeight / 2
       const radius = 8
+      
+      // Glow effect cho nodes của edge đang xét
+      if (isPartOfCurrentEdge && !isComplete) {
+        ctx.shadowColor = "#fbbf24"
+        ctx.shadowBlur = 20
+      }
 
       ctx.fillStyle = nodeColor
       ctx.beginPath()
@@ -555,20 +537,23 @@ export default function GraphVisualization({
       ctx.quadraticCurveTo(x, y, x + radius, y)
       ctx.closePath()
       ctx.fill()
+      
+      ctx.shadowBlur = 0
 
-      // Draw border - thicker and more visible
-      ctx.strokeStyle = "#ffffff"
-      ctx.lineWidth = 3
+      // Draw border - thicker nếu là part of current edge
+      ctx.strokeStyle = isPartOfCurrentEdge ? "#fbbf24" : "#ffffff"
+      ctx.lineWidth = isPartOfCurrentEdge ? 4 : 2.5
       ctx.stroke()
 
-      // Draw node label with better contrast
+      // Draw node label with better contrast - font size động
       ctx.fillStyle = "#ffffff"
-      ctx.font = "bold 18px sans-serif"
+      const fontSize = totalNodes > 50 ? 16 : totalNodes > 20 ? 18 : 22
+      ctx.font = `bold ${fontSize}px sans-serif`
       ctx.textAlign = "center"
       ctx.textBaseline = "middle"
       ctx.fillText(node, pos.x, pos.y)
     })
-  }, [edgeStates, componentColors, isComplete, visibleNodes, visibleEdges])
+  }, [edgeStates, componentColors, isComplete, visibleNodes, visibleEdges, currentEdgeKey, rejectionReason])
 
   return (
     <div className="bg-slate-800/50 border border-slate-700 rounded-lg p-6 backdrop-blur-sm">
@@ -588,7 +573,11 @@ export default function GraphVisualization({
               edges with cost {totalCost}
             </span>
           ) : (
-            "Cuộn chuột để phóng to/thu nhỏ, kéo chuột để di chuyển | Scroll to zoom, drag to pan"
+            <span className="flex items-center gap-2">
+              <span>🔍 Cuộn chuột để <strong className="text-cyan-400">zoom</strong>, kéo để <strong className="text-cyan-400">di chuyển</strong></span>
+              <span className="text-slate-600">|</span>
+              <span>Scroll to <strong className="text-cyan-400">zoom</strong>, drag to <strong className="text-cyan-400">pan</strong></span>
+            </span>
           )}
         </div>
 
@@ -603,16 +592,12 @@ export default function GraphVisualization({
           <TransformComponent>
             <canvas
               ref={canvasRef}
-              className="w-full h-96 bg-gradient-to-br from-slate-900 to-slate-950 rounded-lg border border-slate-700 cursor-grab active:cursor-grabbing"
+              className="w-full h-128 bg-linear-to-br from-slate-900 to-slate-950 rounded-lg border border-slate-700 cursor-grab active:cursor-grabbing"
             />
           </TransformComponent>
         </TransformWrapper>
 
-        <div className="grid grid-cols-2 gap-3 text-sm pt-4 border-t border-slate-700">
-          <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-yellow-400"></div>
-            <span className="text-slate-400">Đang Xét | Examining</span>
-          </div>
+        <div className="grid grid-cols-3 gap-3 text-sm pt-4 border-t border-slate-700">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-green-500"></div>
             <span className="text-slate-400">Được Chọn | Selected</span>
@@ -627,15 +612,15 @@ export default function GraphVisualization({
           </div>
         </div>
 
-        {stepsRef.current.length > 0 && (
+        {currentStep > 0 && (
           <div className="pt-4 border-t border-slate-700">
             <p className="text-xs text-slate-400 mb-2 uppercase tracking-wide">
-              Bước | Step {currentStep + 1} / {stepsRef.current.length}
+              Bước | Step {currentStep}
             </p>
             <div className="w-full bg-slate-700 rounded-full h-2 overflow-hidden">
               <div
-                className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
-                style={{ width: `${((currentStep + 1) / stepsRef.current.length) * 100}%` }}
+                className="bg-linear-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${((currentStep + 1) / Math.max(currentStep + 1, 1)) * 100}%` }}
               ></div>
             </div>
           </div>
